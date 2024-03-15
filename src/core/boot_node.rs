@@ -25,7 +25,7 @@ impl BootstrapNode {
 
     pub async fn run(&mut self) -> Result<(), NodeError> {
         let listener = TcpListener::bind(&self.addr).await?;
-        info!("Bootstrap node server listening on address {}", &self.addr);
+        info!("Boot node listening on address {}", &self.addr);
 
         let shared_self = Arc::new(Mutex::new(self.clone()));
 

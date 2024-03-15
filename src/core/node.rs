@@ -1,42 +1,70 @@
-use crate::core::boot_node;
-
-use super::{config, error::NodeError, types::NodeInfo};
+use super::{
+    common::address_to_multiaddr, config::GOSSIP_TOPIC, error::NodeError,
+    node_registry::NodeRegistry, peer_router::PeerRouter, types::NodeInfo,
+};
+use libp2p::Multiaddr;
+use libp2p::{identity::Keypair, PeerId};
 use log::{debug, error, info};
 use serde_json;
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-#[derive(Debug)]
 pub struct Node {
     pub node_info: NodeInfo,
-    pub peer_list: HashMap<String, SocketAddr>,
+    pub peer_list: NodeRegistry,
+    pub router: PeerRouter,
 }
 
 impl Node {
-    pub fn new(addr: SocketAddr, id: String) -> Self {
-        Self {
-            node_info: NodeInfo { id, addr },
-            peer_list: HashMap::new(),
-        }
+    pub fn new(addr: SocketAddr) -> Result<Self, NodeError> {
+        let key_pair = Keypair::generate_ed25519();
+        let peer_id = PeerId::from(&key_pair.public());
+
+        let router: PeerRouter =
+            PeerRouter::new(&peer_id, &key_pair).map_err(|_| NodeError::NodeCreationError)?;
+
+        Ok(Self {
+            node_info: NodeInfo {
+                id: peer_id.to_string(),
+                addr,
+            },
+            peer_list: NodeRegistry::new(),
+            router,
+        })
     }
 
     pub async fn run(&mut self, bootstrap_addr: SocketAddr) -> Result<(), NodeError> {
         info!("Connecting to bootstrap node at IP {:?}", bootstrap_addr);
 
-        self.join_network(bootstrap_addr).await?;
+        self.bootstrap_node(bootstrap_addr).await?;
 
-        info!("Successfull connected to bootstrap node. Joining network.");
+        info!("Successfull connected to boot node. Joining network.");
 
-        todo!();
+        let peers = self.peer_list.get_registered_nodes_subset();
+        let peers_multi_addresses: Vec<Multiaddr> = peers
+            .into_iter()
+            .filter_map(|peer| address_to_multiaddr(peer.addr))
+            .collect();
+
+        self.router
+            .run_swarm(GOSSIP_TOPIC, &peers_multi_addresses, &self.node_info)
+            .await
+            .map_err(|err| {
+                error!("Swarm failed wih error {}", err);
+                NodeError::SwarmFailure
+            })?;
+
+        //PeerRouter::gossip(&self.node_info, "gossip_topic", peers_multi_addresses).await;
+
+        Ok(())
     }
 
-    async fn join_network(&mut self, bootstrap_addr: SocketAddr) -> Result<(), NodeError> {
+    async fn bootstrap_node(&mut self, bootstrap_addr: SocketAddr) -> Result<(), NodeError> {
         let mut stream = TcpStream::connect(&bootstrap_addr).await?;
 
         info!(
-            "Successfully connected to bootstrap node at address {:?}",
+            "Successfully connected to boot node at address {:?}",
             bootstrap_addr
         );
 
@@ -56,11 +84,11 @@ impl Node {
     }
 
     fn update_peerlist(&mut self, nodes: Vec<NodeInfo>) {
-        nodes.into_iter().for_each(
-            |node| match self.peer_list.insert(node.id.clone(), node.addr) {
-                Some(v) => debug!("Node #{} already exists", node.id),
-                None => debug!("New node #{} added to peer list", node.id),
-            },
-        )
+        nodes
+            .into_iter()
+            .for_each(|node_info| match self.peer_list.add_node(&node_info) {
+                Some(_v) => debug!("Node #{} already exists", node_info.id),
+                None => debug!("New node #{} added to peer list", node_info.id),
+            })
     }
 }

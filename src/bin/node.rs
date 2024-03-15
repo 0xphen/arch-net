@@ -1,5 +1,5 @@
 use arch::core::{
-    config::{BOOT_NODE_IP_STR, ID_SIZE},
+    config::{BOOT_NODE_IP_STR, GOSSIP_TOPIC, ID_SIZE},
     node::Node,
 };
 use dotenv;
@@ -27,7 +27,8 @@ async fn main() {
         .parse::<SocketAddr>()
         .unwrap_or_else(|err| panic!("Error parsing node address {}", err));
 
-    let mut node = Node::new(node_addr, generate_random_id());
+    let mut node =
+        Node::new(node_addr).unwrap_or_else(|err| panic!("Error creating node: {}", err));
 
     node.run(boot_node_addr_str)
         .await

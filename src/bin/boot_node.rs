@@ -2,7 +2,6 @@ use arch::core::boot_node::BootstrapNode;
 use dotenv;
 use env_logger::{Builder, Env};
 use log::info;
-use tokio;
 
 #[tokio::main]
 async fn main() {
@@ -12,12 +11,12 @@ async fn main() {
 
     Builder::from_env(Env::default().default_filter_or(log_mode)).init();
 
-    info!("Initializing bootstrap node");
+    info!("Initializing boot node");
 
     let mut node = BootstrapNode::new()
-        .unwrap_or_else(|e| panic!("Error creating a bootstrap node instance: {}", e));
+        .unwrap_or_else(|e| panic!("Error creating a boot node instance: {}", e));
 
     node.run()
         .await
-        .unwrap_or_else(|e| panic!("Error running bootstrap node: {}", e));
+        .unwrap_or_else(|e| panic!("Error running boot node: {}", e));
 }
