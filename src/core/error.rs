@@ -5,7 +5,6 @@ use std::{error::Error, fmt, io::Error as IoError};
 
 #[derive(Debug)]
 pub enum NodeError {
-    // InvalidSocketAddressError(AddrParseError),
     IoError(IoError),
     Utf8ConversionError(Utf8Error),
     InvalidRequest,
@@ -27,6 +26,19 @@ impl fmt::Display for NodeError {
             }
             NodeError::NodeRegistrationError => write!(f, "Bad request"),
             NodeError::InvalidSocketAddressError(e) => write!(f, "Failed to parse address: {}", e),
+        }
+    }
+}
+
+impl Error for NodeError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            NodeError::InvalidSocketAddressError(e) => Some(e),
+            NodeError::IoError(e) => Some(e),
+            NodeError::JsonSerializationError(e) => Some(e),
+            NodeError::Utf8ConversionError(e) => Some(e),
+            NodeError::NodeRegistrationError => None,
+            NodeError::InvalidRequest => None,
         }
     }
 }

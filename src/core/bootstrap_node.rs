@@ -1,4 +1,4 @@
-use super::{error::NodeError, node_registry::NodeRegistry, types::NodeInfo};
+use super::{config, error::NodeError, node_registry::NodeRegistry, types::NodeInfo};
 use log::{debug, error, info};
 use serde_json;
 use std::net::SocketAddr;
@@ -14,16 +14,18 @@ pub struct BootstrapNode {
 }
 
 impl BootstrapNode {
-    fn new(socket_addr: SocketAddr) -> Self {
-        BootstrapNode {
+    pub fn new() -> Result<Self, NodeError> {
+        let bootstrap_node_addr = config::BOOTSTRAP_NODE_ADDR.parse::<SocketAddr>()?;
+
+        Ok(BootstrapNode {
             registry: NodeRegistry::new(),
-            addr: socket_addr,
-        }
+            addr: bootstrap_node_addr,
+        })
     }
 
     pub async fn run(&mut self) -> Result<(), NodeError> {
         let listener = TcpListener::bind(&self.addr).await?;
-        info!("Proxy server listening on address {}", &self.addr);
+        info!("Bootstrap node server listening on address {}", &self.addr);
 
         let shared_self = Arc::new(Mutex::new(self.clone()));
 

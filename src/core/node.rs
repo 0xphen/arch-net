@@ -1,14 +1,12 @@
-use crate::nodes::bootstrap_node;
+use crate::core::bootstrap_node;
 
-use super::{error::NodeError, types::NodeInfo};
+use super::{config, error::NodeError, types::NodeInfo};
 use log::{debug, error, info};
 use serde_json;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-
-const BOOTSTRAP_NODE_ADDR: &str = "127.0.0.1:8080";
 
 #[derive(Debug)]
 pub struct Node {
@@ -24,14 +22,12 @@ impl Node {
         }
     }
 
-    pub async fn join_network(&mut self) -> Result<(), NodeError> {
-        let bootstrap_node_addr = BOOTSTRAP_NODE_ADDR.parse::<SocketAddr>()?;
-
-        let mut stream = TcpStream::connect(&bootstrap_node_addr).await?;
+    pub async fn join_network(&mut self, bootstrap_addr: SocketAddr) -> Result<(), NodeError> {
+        let mut stream = TcpStream::connect(&bootstrap_addr).await?;
 
         info!(
             "Successfully connected to bootstrap node at address {:?}",
-            bootstrap_node_addr
+            bootstrap_addr
         );
 
         let node_info_str = serde_json::to_string(&self.node_info)?;
