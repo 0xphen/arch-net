@@ -115,6 +115,11 @@ impl PeerRouter {
             //     .unwrap();
         }
 
+        println!(
+            "PEERS: {:?}",
+            self.swarm.connected_peers().collect::<Vec<&PeerId>>()
+        );
+
         self.listen_on_events().await;
 
         Ok(())
@@ -128,10 +133,24 @@ impl PeerRouter {
                     message_id: id,
                     message,
                 })) => {
-                    println!("New Message: {:?}", message);
+                    info!("New Message: {:?}", message);
                 }
                 SwarmEvent::NewListenAddr { address, .. } => {
-                    println!("Local node is listening on {address}");
+                    info!("Local node is listening on address {}", address);
+                }
+                SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+                    info!("New connection established to remote peer {}", peer_id);
+                }
+                SwarmEvent::Behaviour(PeerRouterBehaviourEvent::Mdns(mdns::Event::Discovered(
+                    list,
+                ))) => {
+                    for (peer_id, _multiaddr) in list {
+                        info!("mDNS discovered a new peer: {peer_id}");
+                        self.swarm
+                            .behaviour_mut()
+                            .gossipsub
+                            .add_explicit_peer(&peer_id);
+                    }
                 }
                 _ => {}
             }

@@ -35,7 +35,10 @@ impl Node {
     }
 
     pub async fn run(&mut self, bootstrap_addr: SocketAddr) -> Result<(), NodeError> {
-        info!("Connecting to bootstrap node at IP {:?}", bootstrap_addr);
+        info!(
+            "Local node #{}, Connecting to bootstrap node at IP {:?}",
+            self.node_info.id, bootstrap_addr
+        );
 
         self.bootstrap_node(bootstrap_addr).await?;
 
@@ -55,8 +58,6 @@ impl Node {
                 NodeError::SwarmFailure
             })?;
 
-        //PeerRouter::gossip(&self.node_info, "gossip_topic", peers_multi_addresses).await;
-
         Ok(())
     }
 
@@ -71,7 +72,7 @@ impl Node {
         let node_info_str = serde_json::to_string(&self.node_info)?;
         stream.write_all(node_info_str.as_bytes()).await?;
 
-        // Read the response from the bootstrap node
+        // Read the response from the boot node
         let mut response_buf = String::new();
         stream.read_to_string(&mut response_buf).await?;
 
