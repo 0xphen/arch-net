@@ -45,6 +45,10 @@ impl NodeRegistry {
             })
             .collect();
 
+        if node_infos.is_empty() {
+            return vec![];
+        }
+
         // Shuffle the vector of NodeInfo instances randomly
         let mut shuffled_nodes = node_infos.clone();
         shuffled_nodes.shuffle(&mut rng);
@@ -52,5 +56,35 @@ impl NodeRegistry {
         // Randomly select a subset of the registered nodes
         let subset_size = rng.gen_range(1..=shuffled_nodes.len());
         shuffled_nodes.into_iter().take(subset_size).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn node_registry_test() {
+        let id = "1";
+        let addr_str = "127.0.0.1:8080";
+        let addr = addr_str.parse::<SocketAddr>().unwrap();
+
+        let mut node_registry = NodeRegistry::new();
+        // Adds a new node
+        let res = node_registry.add_node(&NodeInfo {
+            id: id.to_owned(),
+            addr,
+        });
+
+        assert!(res.is_none());
+
+        // Gets a node
+        let node_addr = node_registry.get_node(id).unwrap();
+        assert!(node_addr.to_string() == addr_str);
+
+        // Removes a node
+        let node_addr = node_registry.remove_node(id).unwrap();
+        assert!(node_addr.to_string() == addr_str);
+        assert!(node_registry.nodes.get(id).is_none());
     }
 }

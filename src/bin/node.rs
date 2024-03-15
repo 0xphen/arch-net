@@ -1,12 +1,11 @@
 use arch::core::{
-    config::{BOOTSTRAP_NODE_ADDR, ID_SIZE},
+    config::{BOOT_NODE_IP_STR, ID_SIZE},
     node::Node,
 };
 use dotenv;
 use env_logger::{Builder, Env};
 use log::{debug, info};
 use rand::distributions::Alphanumeric;
-use rand::prelude::*;
 use rand::{thread_rng, Rng};
 use std::net::SocketAddr;
 use tokio;
@@ -24,27 +23,20 @@ async fn main() {
         .parse::<SocketAddr>()
         .unwrap_or_else(|err| panic!("Error parsing node address {}", err));
 
-    let bootstrap_node_addr = BOOTSTRAP_NODE_ADDR
+    let boot_node_addr_str = BOOT_NODE_IP_STR
         .parse::<SocketAddr>()
         .unwrap_or_else(|err| panic!("Error parsing node address {}", err));
 
-    debug!(
-        "Connecting to bootstrap node at IP {:?}",
-        bootstrap_node_addr
-    );
-
     let mut node = Node::new(node_addr, generate_random_id());
 
-    node.join_network(bootstrap_node_addr)
+    node.run(boot_node_addr_str)
         .await
         .unwrap_or_else(|e| panic!("Error joining network node: {}", e));
-
-    debug!("Successfull connected to bootstrap node. Joining network.");
 }
 
 /// Generate a random port, excluding the port of the Bootstrap Node.
 fn generate_random_port() -> u16 {
-    let addr_tokens = BOOTSTRAP_NODE_ADDR.split(":").collect::<Vec<&str>>();
+    let addr_tokens = BOOT_NODE_IP_STR.split(":").collect::<Vec<&str>>();
 
     let exclude_port = addr_tokens[1]
         .parse::<u16>()

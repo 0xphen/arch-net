@@ -15,11 +15,11 @@ pub struct BootstrapNode {
 
 impl BootstrapNode {
     pub fn new() -> Result<Self, NodeError> {
-        let bootstrap_node_addr = config::BOOTSTRAP_NODE_ADDR.parse::<SocketAddr>()?;
+        let boot_addr = config::BOOT_NODE_IP_STR.parse::<SocketAddr>()?;
 
         Ok(BootstrapNode {
             registry: NodeRegistry::new(),
-            addr: bootstrap_node_addr,
+            addr: boot_addr,
         })
     }
 
@@ -68,12 +68,12 @@ impl BootstrapNode {
             return Err(NodeError::InvalidRequest);
         }
 
+        // Gather a subset list of registered nodes
+        let registered_nodes_subset = self.registry.get_registered_nodes_subset();
+
         // If the request is valid, register the node
         match self.register_node(&node_info) {
             true => {
-                // Gather a subset list of registered nodes
-                let registered_nodes_subset = self.registry.get_registered_nodes_subset();
-
                 // Serialize the subset list of nodes into JSON
                 let registered_nodes_json = serde_json::to_string(&registered_nodes_subset)?;
 
@@ -81,7 +81,7 @@ impl BootstrapNode {
                 stream.write_all(registered_nodes_json.as_bytes()).await?;
 
                 debug!(
-                    "Subset of nodes <{:?}> sent to client {:?}",
+                    "Subset of nodes {:?} sent to client {:?}",
                     registered_nodes_json, addr
                 );
 
@@ -96,7 +96,7 @@ impl BootstrapNode {
 
     fn register_node(&mut self, node_info: &NodeInfo) -> bool {
         match self.registry.add_node(node_info) {
-            Some(v) => false,
+            Some(_v) => false,
             None => true,
         }
     }

@@ -1,4 +1,4 @@
-use arch::core::bootstrap_node::BootstrapNode;
+use arch::core::boot_node::BootstrapNode;
 use dotenv;
 use env_logger::{Builder, Env};
 use log::info;

@@ -1,4 +1,4 @@
-use crate::core::bootstrap_node;
+use crate::core::boot_node;
 
 use super::{config, error::NodeError, types::NodeInfo};
 use log::{debug, error, info};
@@ -22,7 +22,17 @@ impl Node {
         }
     }
 
-    pub async fn join_network(&mut self, bootstrap_addr: SocketAddr) -> Result<(), NodeError> {
+    pub async fn run(&mut self, bootstrap_addr: SocketAddr) -> Result<(), NodeError> {
+        info!("Connecting to bootstrap node at IP {:?}", bootstrap_addr);
+
+        self.join_network(bootstrap_addr).await?;
+
+        info!("Successfull connected to bootstrap node. Joining network.");
+
+        todo!();
+    }
+
+    async fn join_network(&mut self, bootstrap_addr: SocketAddr) -> Result<(), NodeError> {
         let mut stream = TcpStream::connect(&bootstrap_addr).await?;
 
         info!(
