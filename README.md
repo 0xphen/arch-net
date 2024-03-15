@@ -11,7 +11,7 @@ $ cargo run --bin boot_node
 
 In another terminal, run the node:
 ```
-$ cargo run --bin boot_node
+$ cargo run --bin node
 ```
 
 You can run as many nodes as you want. The ports are generated dynamically to avoid port-in-use errors.
