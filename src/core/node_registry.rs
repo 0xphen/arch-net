@@ -82,6 +82,10 @@ mod tests {
         let node_addr = node_registry.get_node(id).unwrap();
         assert!(node_addr.to_string() == addr_str);
 
+        // Gets a subset of nodes
+        let nodes = node_registry.get_registered_nodes_subset();
+        assert!(!nodes.is_empty());
+
         // Removes a node
         let node_addr = node_registry.remove_node(id).unwrap();
         assert!(node_addr.to_string() == addr_str);
