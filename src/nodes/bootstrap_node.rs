@@ -28,7 +28,7 @@ impl BootstrapNode {
         let shared_self = Arc::new(Mutex::new(self.clone()));
 
         loop {
-            let (client_stream, _) = listener.accept().await?;
+            let (client_stream, client_addr) = listener.accept().await?;
 
             let shared_self = Arc::clone(&shared_self);
 
@@ -36,7 +36,7 @@ impl BootstrapNode {
                 let mut node_guard = shared_self.lock().await;
 
                 if let Err(err) = node_guard
-                    .handle_node_registration_request(client_stream)
+                    .handle_node_registration_request(client_stream, client_addr)
                     .await
                 {
                     error!("Error handling connection: {:?}", err);
@@ -54,6 +54,7 @@ impl BootstrapNode {
     async fn handle_node_registration_request(
         &mut self,
         mut stream: TcpStream,
+        addr: SocketAddr,
     ) -> Result<(), NodeError> {
         let mut buf = [0; 1024];
         let n = stream.read(&mut buf).await?;
@@ -77,16 +78,24 @@ impl BootstrapNode {
                 // Send the JSON string to the client node
                 stream.write_all(registered_nodes_json.as_bytes()).await?;
 
+                debug!(
+                    "Subset of nodes <{:?}> sent to client {:?}",
+                    registered_nodes_json, addr
+                );
+
                 Ok(())
             }
             false => {
-                error!("Failed to register node #{}", node_info.id);
+                error!("Node #{} already registered", node_info.id);
                 Err(NodeError::NodeRegistrationError)
             }
         }
     }
 
     fn register_node(&mut self, node_info: &NodeInfo) -> bool {
-        self.registry.add_address(node_info.addr)
+        match self.registry.add_node(node_info) {
+            Some(v) => false,
+            None => true,
+        }
     }
 }

@@ -1,4 +1,5 @@
 use serde_json::error::Error as SerdeJsonError;
+use std::net::AddrParseError;
 use std::str::Utf8Error;
 use std::{error::Error, fmt, io::Error as IoError};
 
@@ -10,6 +11,7 @@ pub enum NodeError {
     InvalidRequest,
     JsonSerializationError(SerdeJsonError),
     NodeRegistrationError,
+    InvalidSocketAddressError(AddrParseError),
 }
 
 impl fmt::Display for NodeError {
@@ -24,6 +26,7 @@ impl fmt::Display for NodeError {
                 write!(f, "Failed to serialize str: {}", e)
             }
             NodeError::NodeRegistrationError => write!(f, "Bad request"),
+            NodeError::InvalidSocketAddressError(e) => write!(f, "Failed to parse address: {}", e),
         }
     }
 }
@@ -43,5 +46,11 @@ impl From<Utf8Error> for NodeError {
 impl From<SerdeJsonError> for NodeError {
     fn from(err: SerdeJsonError) -> NodeError {
         NodeError::JsonSerializationError(err)
+    }
+}
+
+impl From<AddrParseError> for NodeError {
+    fn from(err: AddrParseError) -> NodeError {
+        NodeError::InvalidSocketAddressError(err)
     }
 }
