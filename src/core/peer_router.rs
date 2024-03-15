@@ -115,10 +115,6 @@ impl PeerRouter {
             //     .unwrap();
         }
 
-        println!(
-            "PEERS: {:?}",
-            self.swarm.connected_peers().collect::<Vec<&PeerId>>()
-        );
 
         self.listen_on_events().await;
 
