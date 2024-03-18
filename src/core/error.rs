@@ -5,7 +5,7 @@ use std::str::Utf8Error;
 use std::{error::Error, fmt, io::Error as IoError};
 
 #[derive(Debug)]
-pub enum NodeError {
+pub enum ArchError {
     IoError(IoError),
     Utf8ConversionError(Utf8Error),
     InvalidRequest,
@@ -13,79 +13,103 @@ pub enum NodeError {
     NodeRegistrationError,
     InvalidSocketAddressError(AddrParseError),
     SwarmFailure,
-    GossipConfigError(ConfigBuilderError),
     GossipSubError(SubscriptionError),
     NodeCreationError,
+
+    GossipConfigError(ConfigBuilderError),
+    GossipBehaviourError,
+    SwarmBuilderError,
 }
 
-impl fmt::Display for NodeError {
+impl fmt::Display for ArchError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            NodeError::IoError(e) => write!(f, "IO error: {}", e),
-            NodeError::InvalidRequest => write!(f, "Bad request"),
-            NodeError::Utf8ConversionError(e) => {
+            ArchError::GossipConfigError(e) => {
                 write!(f, "Failed to parse buffer into utf8: {}", e)
             }
-            NodeError::NodeCreationError => write!(f, "Bad request"),
-            NodeError::GossipConfigError(e) => {
+            ArchError::GossipBehaviourError => write!(f, "Swarm failed"),
+
+            ArchError::SwarmBuilderError => write!(f, "Bad request"),
+
+            ArchError::IoError(e) => write!(f, "IO error: {}", e),
+            ArchError::InvalidRequest => write!(f, "Bad request"),
+            ArchError::Utf8ConversionError(e) => {
                 write!(f, "Failed to parse buffer into utf8: {}", e)
             }
-            NodeError::JsonSerializationError(e) => {
+            ArchError::NodeCreationError => write!(f, "Bad request"),
+
+            ArchError::JsonSerializationError(e) => {
                 write!(f, "Failed to serialize str: {}", e)
             }
-            NodeError::GossipSubError(e) => {
+            ArchError::GossipSubError(e) => {
                 write!(f, "Failed to serialize str: {}", e)
             }
-            NodeError::NodeRegistrationError => write!(f, "Failed to register node"),
-            NodeError::SwarmFailure => write!(f, "Swarm failed"),
-            NodeError::InvalidSocketAddressError(e) => write!(f, "Failed to parse address: {}", e),
+            ArchError::NodeRegistrationError => write!(f, "Failed to register node"),
+            ArchError::SwarmFailure => write!(f, "Swarm failed"),
+            ArchError::InvalidSocketAddressError(e) => write!(f, "Failed to parse address: {}", e),
         }
     }
 }
 
-impl Error for NodeError {
+impl Error for ArchError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            NodeError::InvalidSocketAddressError(e) => Some(e),
-            NodeError::GossipSubError(e) => Some(e),
-            NodeError::IoError(e) => Some(e),
-            NodeError::JsonSerializationError(e) => Some(e),
-            NodeError::GossipConfigError(e) => Some(e),
-            NodeError::Utf8ConversionError(e) => Some(e),
-            NodeError::NodeRegistrationError => None,
-            NodeError::InvalidRequest => None,
-            NodeError::NodeCreationError => None,
-            NodeError::SwarmFailure => None,
+            ArchError::InvalidSocketAddressError(e) => Some(e),
+            ArchError::GossipSubError(e) => Some(e),
+            ArchError::IoError(e) => Some(e),
+            ArchError::JsonSerializationError(e) => Some(e),
+
+            ArchError::GossipConfigError(e) => Some(e),
+            ArchError::GossipBehaviourError => None,
+
+            ArchError::Utf8ConversionError(e) => Some(e),
+            ArchError::NodeRegistrationError => None,
+            ArchError::InvalidRequest => None,
+            ArchError::NodeCreationError => None,
+            ArchError::SwarmFailure => None,
+            ArchError::SwarmBuilderError => None,
         }
     }
 }
 
-impl From<IoError> for NodeError {
-    fn from(err: IoError) -> NodeError {
-        NodeError::IoError(err)
+impl From<IoError> for ArchError {
+    fn from(err: IoError) -> ArchError {
+        ArchError::IoError(err)
     }
 }
 
-impl From<Utf8Error> for NodeError {
-    fn from(err: Utf8Error) -> NodeError {
-        NodeError::Utf8ConversionError(err)
+impl From<Utf8Error> for ArchError {
+    fn from(err: Utf8Error) -> ArchError {
+        ArchError::Utf8ConversionError(err)
     }
 }
 
-impl From<SerdeJsonError> for NodeError {
-    fn from(err: SerdeJsonError) -> NodeError {
-        NodeError::JsonSerializationError(err)
+impl From<SerdeJsonError> for ArchError {
+    fn from(err: SerdeJsonError) -> ArchError {
+        ArchError::JsonSerializationError(err)
     }
 }
 
-impl From<SubscriptionError> for NodeError {
-    fn from(err: SubscriptionError) -> NodeError {
-        NodeError::GossipSubError(err)
+impl From<SubscriptionError> for ArchError {
+    fn from(err: SubscriptionError) -> ArchError {
+        ArchError::GossipSubError(err)
     }
 }
 
-impl From<AddrParseError> for NodeError {
-    fn from(err: AddrParseError) -> NodeError {
-        NodeError::InvalidSocketAddressError(err)
+impl From<AddrParseError> for ArchError {
+    fn from(err: AddrParseError) -> ArchError {
+        ArchError::InvalidSocketAddressError(err)
+    }
+}
+
+impl From<ConfigBuilderError> for ArchError {
+    fn from(err: ConfigBuilderError) -> ArchError {
+        ArchError::GossipConfigError(err)
+    }
+}
+
+impl From<&str> for ArchError {
+    fn from(_err: &str) -> ArchError {
+        ArchError::GossipBehaviourError
     }
 }

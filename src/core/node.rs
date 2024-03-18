@@ -1,95 +1,207 @@
-use super::{
-    common::address_to_multiaddr, config::GOSSIP_TOPIC, error::NodeError,
-    node_registry::NodeRegistry, peer_router::PeerRouter, types::NodeInfo,
+use libp2p::futures::StreamExt;
+use libp2p::{
+    core::multiaddr::Multiaddr,
+    identify::Event as IdentifyEvent,
+    identity::Keypair,
+    kad::{self, Mode},
+    noise,
+    swarm::SwarmEvent,
+    tcp, yamux, PeerId, Swarm, SwarmBuilder,
 };
-use libp2p::Multiaddr;
-use libp2p::{identity::Keypair, PeerId};
-use log::{debug, error, info};
-use serde_json;
-use std::net::SocketAddr;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use libp2p_gossipsub::{Event as GossipsubEvent, IdentTopic};
+use std::env::args;
+use std::error::Error;
+use tokio::{io, io::AsyncBufReadExt, select};
+use tracing::{debug, error, info, warn};
 
+use crate::core::behaviour::ArchBehaviourEvent;
+
+use super::{behaviour::ArchBehaviour, error::ArchError};
+
+const GOSSIP_TOPIC: &str = "gossip_topic";
+pub const BOOT_NODE: &str = "/ip4/127.0.0.1/tcp/8080";
+
+#[allow(dead_code)]
 pub struct Node {
-    pub node_info: NodeInfo,
-    pub peer_list: NodeRegistry,
-    pub router: PeerRouter,
+    peer_id: PeerId,
+    key: Keypair,
+    swarm: Swarm<ArchBehaviour>,
+    addr: Multiaddr,
 }
 
 impl Node {
-    pub fn new(addr: SocketAddr) -> Result<Self, NodeError> {
-        let key_pair = Keypair::generate_ed25519();
-        let peer_id = PeerId::from(&key_pair.public());
+    pub async fn new(addr: Multiaddr) -> Result<Self, ArchError> {
+        let key = Keypair::generate_ed25519();
+        let peer_id = PeerId::from(key.public());
+        let behaviour = ArchBehaviour::new(&key, &peer_id)?;
 
-        let router: PeerRouter =
-            PeerRouter::new(&peer_id, &key_pair).map_err(|_| NodeError::NodeCreationError)?;
+        let swarm = Self::init_swarm(&key, behaviour)?;
 
         Ok(Self {
-            node_info: NodeInfo {
-                id: peer_id.to_string(),
-                addr,
-            },
-            peer_list: NodeRegistry::new(),
-            router,
+            peer_id,
+            key,
+            addr,
+            swarm,
         })
     }
 
-    pub async fn run(&mut self, bootstrap_addr: SocketAddr) -> Result<(), NodeError> {
-        info!(
-            "Local node #{}, Connecting to bootstrap node at IP {:?}",
-            self.node_info.id, bootstrap_addr
-        );
+    pub async fn run(&mut self) -> Result<(), Box<dyn Error>> {
+        let topic = IdentTopic::new(GOSSIP_TOPIC);
+        let _subscibed = self.swarm.behaviour_mut().gossipsub.subscribe(&topic)?;
 
-        self.bootstrap_node(bootstrap_addr).await?;
+        info!("Subscribed to topic {topic}");
+        info!("See args: {:?}", args().nth(1));
+        // Connect to the boot node.
+        // If an argument is passed to the program, assume it's the address of the boot node.
+        if let Some(boot_addr) = args().nth(1) {
+            let _listener_id = self.swarm.listen_on(self.addr.clone())?;
 
-        info!("Successfull connected to boot node. Joining network.");
+            let boot_node: Multiaddr = boot_addr.parse()?;
+            self.swarm.dial(boot_node.clone())?;
+            debug!("Dialed to boot node: {boot_node}");
+        } else {
+            info!("Acting as the bootstrap node.");
+            self.swarm.listen_on(BOOT_NODE.parse()?)?;
+        }
 
-        let peers = self.peer_list.get_registered_nodes_subset();
-        let peers_multi_addresses: Vec<Multiaddr> = peers
-            .into_iter()
-            .filter_map(|peer| address_to_multiaddr(peer.addr))
-            .collect();
+        self.event_listener(topic).await;
+        Ok(())
+    }
 
-        self.router
-            .run_swarm(GOSSIP_TOPIC, &peers_multi_addresses, &self.node_info)
-            .await
+    async fn event_listener(&mut self, topic: IdentTopic) {
+        let mut stdin = io::BufReader::new(io::stdin()).lines();
+
+        info!("Enter messages via STDIN and they will be sent to connected peers using Gossipsub");
+
+        loop {
+            select! {
+                    Ok(Some(line)) = stdin.next_line() => {
+                      if let Err(e) = self.swarm
+                          .behaviour_mut().gossipsub
+                          .publish(topic.clone(), line.as_bytes()) {
+                          info!("Publish error: {e:?}");
+                      } else {
+                        info!("Message {:?} published", line.as_bytes());
+                      }
+                  }
+
+            // Handle swarm events
+            event = self.swarm.select_next_some() => match event {
+              SwarmEvent::NewListenAddr { address, .. } => info!("Listening on {address:?}"),
+
+              SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+                info!("Connected to {}", peer_id);
+              }
+
+               // Identify events
+               SwarmEvent::Behaviour(ArchBehaviourEvent::Identify(event)) => match event {
+                IdentifyEvent::Sent { peer_id } => info!("IdentifyEvent:Sent: {peer_id}"),
+
+                IdentifyEvent::Received { peer_id, info } => {
+                    info!("IdentifyEvent:Received {peer_id} => {info:?}");
+
+                    let addr = info.listen_addrs[0].clone();
+
+                    match self.swarm
+                        .behaviour_mut()
+                        .kad
+                        .add_address(&peer_id, addr.clone())
+                    {
+                        kad::RoutingUpdate::Failed => {
+                            error!("IdentifyReceived: Failed to register address to Kademlia")
+                        }
+
+                        kad::RoutingUpdate::Success => {
+                            info!("IdentifyReceived: {addr}: Success register address")
+                        }
+
+                        kad::RoutingUpdate::Pending => {
+                            warn!("IdentifyReceived: Register address pending")
+                        }
+                    }
+                }
+
+                _ => {}
+               }
+
+                // Kad events
+               SwarmEvent::Behaviour(ArchBehaviourEvent::Kad(event)) => match event {
+                kad::Event::ModeChanged { new_mode } => info!("KadEvent:ModeChanged: {new_mode}"),
+
+                kad::Event::RoutablePeer { peer, address } => {
+                    info!("KadEvent:RoutablePeer: {peer} | {address}")
+                }
+
+                kad::Event::PendingRoutablePeer { peer, address } => {
+                    info!("KadEvent:PendingRoutablePeer: {peer} | {address}")
+                }
+
+                kad::Event::InboundRequest { request } => {
+                    info!("KadEvent:InboundRequest: {request:?}")
+                }
+
+                kad::Event::RoutingUpdated {
+                  peer,
+                  is_new_peer,
+                  addresses,
+                  bucket_range,
+                  old_peer,
+              } => {
+                  info!("KadEvent:RoutingUpdated: {peer} | IsNewPeer? {is_new_peer} | {addresses:?} | {bucket_range:?} | OldPeer: {old_peer:?}");
+              }
+
+              kad::Event::OutboundQueryProgressed {
+                  id,
+                  result,
+                  stats,
+                  step,
+              } => {
+                  info!("KadEvent:OutboundQueryProgressed: ID: {id:?} | Result: {result:?} | Stats: {stats:?} | Step: {step:?}")
+              }
+
+              _ => {}
+               },
+
+               SwarmEvent::Behaviour(ArchBehaviourEvent::Gossipsub(GossipsubEvent::Message {
+                propagation_source: peer_id,
+                message_id: id,
+                message,
+            })) => info!(
+                    "Got message: '{}' with id: {id} from peer: {peer_id}",
+                    String::from_utf8_lossy(&message.data),
+                ),
+
+
+               _ => {}
+            }
+
+              }
+        }
+    }
+
+    fn init_swarm(
+        key: &Keypair,
+        behaviour: ArchBehaviour,
+    ) -> Result<Swarm<ArchBehaviour>, ArchError> {
+        let mut swarm = SwarmBuilder::with_existing_identity(key.clone())
+            .with_async_std()
+            .with_tcp(
+                tcp::Config::default(),
+                noise::Config::new,
+                yamux::Config::default,
+            )
             .map_err(|err| {
-                error!("Swarm failed wih error {}", err);
-                NodeError::SwarmFailure
-            })?;
+                error!("Failed to build swarm {err}");
+                ArchError::SwarmBuilderError
+            })?
+            .with_behaviour(|_| behaviour)
+            .map_err(|err| {
+                error!("Failed to build swarm {err}");
+                ArchError::SwarmBuilderError
+            })?
+            .build();
 
-        Ok(())
-    }
-
-    async fn bootstrap_node(&mut self, bootstrap_addr: SocketAddr) -> Result<(), NodeError> {
-        let mut stream = TcpStream::connect(&bootstrap_addr).await?;
-
-        info!(
-            "Successfully connected to boot node at address {:?}",
-            bootstrap_addr
-        );
-
-        let node_info_str = serde_json::to_string(&self.node_info)?;
-        stream.write_all(node_info_str.as_bytes()).await?;
-
-        // Read the response from the boot node
-        let mut response_buf = String::new();
-        stream.read_to_string(&mut response_buf).await?;
-
-        let nodes: Vec<NodeInfo> = serde_json::from_str(&response_buf)?;
-
-        debug!("Received response from bootstrap node {:?}", nodes);
-        self.update_peerlist(nodes);
-
-        Ok(())
-    }
-
-    fn update_peerlist(&mut self, nodes: Vec<NodeInfo>) {
-        nodes
-            .into_iter()
-            .for_each(|node_info| match self.peer_list.add_node(&node_info) {
-                Some(_v) => debug!("Node #{} already exists", node_info.id),
-                None => debug!("New node #{} added to peer list", node_info.id),
-            })
+        swarm.behaviour_mut().kad.set_mode(Some(Mode::Server));
+        Ok(swarm)
     }
 }

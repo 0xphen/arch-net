@@ -9,7 +9,7 @@ edition = "2021"
 dotenv = "0.15.0"
 env_logger = "0.11.3"
 futures = "0.3.30"
-libp2p = {version="0.53.2", features = ["noise","tcp", "yamux", "websocket", "async-std", "dns", "mdns", "ping", "macros"]}
+libp2p = {version="0.53.2", features = ["noise","tcp", "yamux", "websocket", "async-std", "dns", "mdns", "ping", "macros", "identify", "kad"]}
 libp2p-gossipsub = "0.46.1"
 async-std = { version = "1.6.2", features = ["attributes"] }
 log = "0.4.21"
@@ -18,3 +18,5 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.114"
 tokio = { version = "1.36.0", features = ["full"] }
 toml = "0.8.11"
+tracing = "0.1.40"
+tracing-subscriber = "0.3.18"
